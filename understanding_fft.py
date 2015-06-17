@@ -55,6 +55,6 @@ plt.title('Solid = Real, Dashed = Imaginary\nGreen = No Shift, Blue = Shift')
 plt.xlabel('Frequency')
 plt.ylabel('FFT')
 plt.show()
-plt.close()
+#plt.close()
 
 
