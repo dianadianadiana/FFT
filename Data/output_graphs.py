@@ -65,32 +65,31 @@ def poly_maker(x, y, func, poly = 1):
         i += 1
     return znew
     
-##### cluster algorithm #####
+############################## cluster algorithm ##############################
 # goal: find out where the clusters are, and keep only the max of each cluster
 
-def cluster(arr, num_indexes, width = .005):
+def cluster(index_arr, arr, peak_width = .015):
     """
         Takes an array of values (indexes) and clusters them (based on the width)
         Parameters:
+            index_arr -- array of indexes (sub array from a bigger array)
             arr -- array of values (it is a sub array from a bigger array)
-            num_indexes -- the length of the bigger array (newN)
-            width -- how big do we want the cluster to account for
+            peak_width -- how wide is the peak
         Returns:
             clusters -- a list of lists. each element of clusters is one cluster
     """
     clusters = []
     i = 0
-    while i < len(arr):
-        temp_arr = []
+    while i < len(index_arr):
+        temp_arr = [index_arr[i]]
         j = i+1
-        temp_arr.append(arr[i])
-        while j < len(arr) and (np.abs(arr[j-1] - arr[j]) <= width * num_indexes):
-            temp_arr.append(arr[j])
+        while j < len(index_arr) and (np.abs(arr[temp_arr[0]] - arr[index_arr[j]]) <= peak_width):
+            temp_arr.append(index_arr[j])
             j+=1
         clusters.append(temp_arr)
         i=j
     return clusters
-
+    
 def cluster_max(clusters, y):
     """ 
         Takes a list of lists (clusters) and finds the index of where each max value of a cluster is
@@ -166,7 +165,8 @@ for filename in filename_arr:
             gap_loc = np.append(gap_loc, i)
         i += 1
     num_gap = len(gap_loc) # the number of gaps present 
-    
+    biggest_gap = np.amax(gap)
+
 ################################################################################
 ########## Create a new time and flux array to account for the gaps ############
 ################################################################################
@@ -198,29 +198,35 @@ for filename in filename_arr:
     #account for last part where there is no gap after
     flux_cad[newflux_st:num_cad] = f[oldflux_st:num_time] 
     
+    if biggest_gap/len(time_cad) >= .2:
+        info = ["LCfluxesepic" + str(filename) + "star00", None, None,'huge gap']
+        information_arr.append(info)
+        continue
+        
 ################################################################################
 #################################### FFT part ##################################
 ################################################################################
 
     # oversampling
-    N = len(t)
+    N = len(time_cad)
     N_log = np.log2(N) # 2 ** N_log = N
     N_over = np.round(N_log)
     if N_over < N_log:
         N_over += 1 #compensate for if N_log was rounded down
     
-    newN = 2**(N_over)
+    extra_fact = 3
+    newN = 2**(N_over + extra_fact)
     diff = newN - N
     mean = np.mean(f)
     voidf = np.zeros(diff) + mean
-    newf = np.append(f, voidf)
+    newf = np.append(flux_cad, voidf)
     
     norm_fact = 2.0 / newN # normalization factor 
-    f_flux = fft(f) * norm_fact
+    f_flux = fft(newf) * norm_fact
         
-    freq = fftfreq(np.int(len(newf)))
-    d_pts_new = (np.amax(t)-np.amin(t))/newN
-    freq_fact = 1.0 / d_pts_new #frequency factor 
+    freq = fftfreq((len(newf)))
+    d_pts = (np.amax(time_cad) - np.amin(time_cad)) / N
+    freq_fact = 1.0 / d_pts #frequency factor 
     
     postivefreq = freq > 0 # take only positive values
     freq, f_flux = freq[postivefreq], f_flux[postivefreq]
@@ -229,6 +235,13 @@ for filename in filename_arr:
     
     conv_hr_day = 24. #conversion factor from cycles/hour to cycles/day
     constant = freq_fact*conv_hr_day
+    
+    bin_sz = 1./len(newf) * constant
+    peak_width_to_zero = bin_sz * 2**extra_fact
+    peak_width = 2 * peak_width_to_zero
+    
+    # peak_error = .01 # should i do this?
+    # peak_width += peak_error
 
 ################################################################################
 ################################################################################
@@ -247,8 +260,9 @@ for filename in filename_arr:
     z2 = poly_maker(freq_fit, power_fit, freq)
     power_rel = power/z2
 
-    peak_indexes = cluster_max(cluster(val_indexes, newN), power)    
-    harmonics_indexes = cluster_max(cluster(val_indexes1, newN), power)    
+    peak_indexes = cluster_max(cluster(val_indexes, freq*constant, peak_width), power)    
+    harmonics_indexes = cluster_max(cluster(val_indexes1, freq*constant, peak_width), power)  
+      
 
     ## peak limits
     # we only want peaks that are between freqs of [1,10]    
@@ -280,38 +294,43 @@ for filename in filename_arr:
     if len(peak_indexes) == 0:
         #print(chosenfile)
         #print('No peaks have been detected -- may be a longer period planet')
-        info = ["LCfluxesepic" + str(filename) + "star00", None, None]
+        info = ["LCfluxesepic" + str(filename) + "star00", None, None, 'no peaks detected']
         information_arr.append(info)
         continue
     
     i = 0
-    while i < len(peak_indexes): #iterate through all the "main" peaks (higher than 4.6 times the mean)
+    while i < len(peak_indexes): #iterate through all the "main" peaks (higher than 4.0 times the mean)
         curr_freq = freq[peak_indexes[i]]*constant # get the frequency of the current index
-        number = len(harmonics_indexes)
+        number = len(harmonics_indexes)+1
         # set up an array whose values are multiples of the current frequency
-        curr_freq_values = np.arange(1,number)*curr_freq 
-        # error is how close do we want the multiple of the current frequency to be to the 
-        error = .1 #better way of setting this value?
-        
+        curr_freq_values = np.arange(2,number)*curr_freq
+        curr_freq_lower_values = curr_freq_values - peak_width/2
+        curr_freq_upper_values = curr_freq_values + peak_width/2
+        curr_freq_bounds = np.array([curr_freq_lower_values, curr_freq_upper_values])
+        curr_freq_bounds = np.transpose(curr_freq_bounds)
+    
         temp_arr = [i] # set up an array starting with the current index
         #iterate through all the harmonics where peaks were 3 times the mean
-        j = i + 1 # j is one greater than i so it looks at the next value, and not the same one
+        j = i # j is one greater than i so it looks at the next value, and not the same one
         while j < len(harmonics_indexes): 
             # the frequency that will be compared to the the multiples of the current frequency
             other_freq = freq[harmonics_indexes[j]]*constant 
         
             #iterate through curr_freq_values and compare the other_freq to each multiple of curr_freq
-            for multiple in curr_freq_values:
-                if np.abs(other_freq - multiple) <= error: 
+            for lower_multiple, upper_multiple in curr_freq_bounds:
+                if other_freq >= lower_multiple and other_freq <= upper_multiple: 
                     # add the index from the harmonics array 
                     temp_arr.append(j) 
                     break # break because no other value will satisfy the condition
-                elif multiple > other_freq:
+                elif lower_multiple > other_freq:
                     break # no point in trying to satisfy the condition
             j+=1   
         potential_arr.append(temp_arr)
         i+=1
         
+###############################################################################
+###############################################################################
+    
     rel_power_sums = np.empty(0)
     for elem in potential_arr:
         total =  power_rel[peak_indexes[elem[0]]]
@@ -322,21 +341,6 @@ for filename in filename_arr:
         rel_power_sums = np.append(rel_power_sums, total)
 
     relevant_index = peak_indexes[np.argmax(rel_power_sums)]
-    relevant_freq = freq[relevant_index]*constant
-    #**remember** constant = freq_fact*conv_hr_day
-    curr_relevant_freq_values = 1. / np.arange(2,len(original_peak_indexes)) * relevant_freq
-    i =0
-    while i < len(original_peak_indexes):
-        temp_index = original_peak_indexes[i]
-        temp_freq = freq[temp_index]*constant
-        if temp_freq >= relevant_freq:
-            break
-        for elem in curr_relevant_freq_values:
-            if np.abs(elem - temp_freq) <= error:
-                relevant_index = temp_index
-                break
-        i+=1
-            
     relevant_freq = freq[relevant_index]*constant
     relevant_period = 24./relevant_freq
 
@@ -366,12 +370,11 @@ for filename in filename_arr:
     ax3.plot(freq*freq_fact*conv_hr_day, power_rel,'black')
     ax3.scatter(freq[relevant_index]*freq_fact*conv_hr_day, power_rel[relevant_index], c='black', s=40)
     plt.title("PEAK FREQ = " + str(relevant_freq) + " Period: " + str(relevant_period), fontsize =16)
-    #plt.title(char("PEAK FREQ = " + str(relevant_freq),"Period: " + str(relevant_period)), fontsize = 16)
     plt.xlabel("Frequency (cycles/day)")
     upper  = np.round(relevant_freq)
     if upper < relevant_freq:
         upper += 1
-    plt.xlim([0,upper])
+    plt.xlim([0, upper])
     
     #plt.show()
     
