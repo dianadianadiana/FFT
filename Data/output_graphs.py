@@ -38,18 +38,14 @@ def constraint_index_finder(constraint, x, y, poly = 0, loops = 10):
     j = 0
     while j < loops:
         z = np.polyfit(x, y, poly)
-
         if j > 0 and z[0] == val:
             break # to leave the loop early if the same value is brought up
-
         val = z[0]
-
         i = 0
         while i < len(y):
             if y[i] >= constraint * val:
                 val_indexes = np.append(val_indexes, i)
             i += 1
-
         j += 1
     val_indexes = val_indexes.astype(int)
     return val_indexes
@@ -104,6 +100,46 @@ def cluster_max(clusters, y):
         max_indexes = np.append(max_indexes, elem[y[elem].argmax()])
     max_indexes = max_indexes.astype(int)
     return max_indexes
+
+def peak_verifier(index_arr, arr1, arr2, n, peak_width):
+    """
+        The purpose of this function is to recognize if two points are on the same peak, 
+            and if there are two poitns on the same peak, then the point that is the true
+            max of the peak will be chosen, whereas the other one will be discarded.
+        Parameters:
+            index_arr: this is the peak_indexes or harmonics_indexes
+            arr1: freq*constant
+            arr2: power
+            n: 2*n = the minumum number of data points for a peak
+            peak_width: the width of the peak
+        Returns:
+            the index_arr with the indexes of the true peak maxes
+    """
+    k = 0
+    delete_arr = []
+    while k < len(index_arr) - 1:
+        curr_index = index_arr[k]
+        next_index = index_arr[k+1]
+
+        if np.abs(arr1[curr_index]-arr1[next_index]) <= peak_width:
+
+            curr_lower, curr_upper = curr_index - n, curr_index + n
+            next_lower, next_upper = next_index - n, next_index + n
+            
+            if curr_lower < 0:
+                curr_lower = 0
+            if next_lower < 0:
+                next_lower = 0
+            #curr_maxpow and next_maxpow should be the same
+            curr_maxpow = np.amax(arr2[curr_lower:curr_upper])
+            next_maxpow = np.amax(arr2[next_lower:next_upper])
+
+            if power[curr_index] == curr_maxpow:
+                delete_arr.append(k+1)
+            else:
+                delete_arr.append(k)  
+        k+=1
+    return np.delete(index_arr, delete_arr)
     
 def limit_applier(arr, lower_limit = 1.0, upper_limit = 10.0):
     """
@@ -131,13 +167,12 @@ def limit_applier(arr, lower_limit = 1.0, upper_limit = 10.0):
 filename_arr = ['201124933', '201127583', '201140274', '201143076', '201149315', '201159747',
                 '201167435', '201174877', '201345483', '201637175', '201862715', '202060551',
                 '202068113', '203099398', '205029914', '205071984']
-information_arr =[] # [ filename, peak freq, period]
+information_arr =[] # ea elem has this format [ filename, peak freq, period, notes - optional]
 for filename in filename_arr:
     chosenfile = "C:/Users/dianadianadiana/Desktop/Research/Data/Data/LCfluxesepic" + str(filename) + "star00"
     data = np.loadtxt(chosenfile + ".txt")
     data = np.transpose(data)
     t = data[0] # in days
-    t = t*24. # in hours
     f = data[1] # flux
 
 ################################################################################
@@ -208,14 +243,17 @@ for filename in filename_arr:
 ################################################################################
 
     # oversampling
+    time_cad *= 24. #in hours
     N = len(time_cad)
     N_log = np.log2(N) # 2 ** N_log = N
-    N_over = np.round(N_log)
-    if N_over < N_log:
-        N_over += 1 #compensate for if N_log was rounded down
+    exp = np.round(N_log)
+    if exp < N_log:
+        exp += 1 #compensate for if N_log was rounded down
     
     extra_fact = 3
-    newN = 2**(N_over + extra_fact)
+    newN = 2**(exp + extra_fact)
+    n = newN/N
+    n = np.round(n)
     diff = newN - N
     mean = np.mean(f)
     voidf = np.zeros(diff) + mean
@@ -261,9 +299,11 @@ for filename in filename_arr:
     power_rel = power/z2
 
     peak_indexes = cluster_max(cluster(val_indexes, freq*constant, peak_width), power)    
-    harmonics_indexes = cluster_max(cluster(val_indexes1, freq*constant, peak_width), power)  
+    harmonics_indexes = cluster_max(cluster(val_indexes1, freq*constant, peak_width), power)
+    
+    peak_indexes = peak_verifier(peak_indexes, freq*constant, power, n, peak_width)
+    harmonics_indexes = peak_verifier(harmonics_indexes, freq*constant, power, n, peak_width)  
       
-
     ## peak limits
     # we only want peaks that are between freqs of [1,10]    
     original_peak_indexes = peak_indexes
@@ -274,11 +314,12 @@ for filename in filename_arr:
     harmonics_indexes = np.delete(harmonics_indexes, limit_applier(freq[harmonics_indexes]*constant))
 
     # now we want to delete the peak values that are not the absolute maxima within the cluster
-    # and we just want to keep the absolute maxima
+    # and we just want to keep the absolute maxima 
+    ## NOT SURE IF THIS PART IS NECESSARY
     
-    delete_arr =  [i for i in val_indexes if (i not in peak_indexes)]
-    freq_delete = np.delete(freq, delete_arr)
-    power_delete = np.delete(power, delete_arr)
+    #delete_arr =  [i for i in val_indexes if (i not in peak_indexes)]
+    #freq_delete = np.delete(freq, delete_arr)
+    #power_delete = np.delete(power, delete_arr)
     
 ################################################################################
 ############ Determining potential periods based on the FFT ####################
@@ -349,26 +390,30 @@ for filename in filename_arr:
 ################################################################################
 
     fig = plt.figure(figsize=(20,15))
+    
     ax1 = fig.add_subplot(211)
-    ax1.scatter(t,f, s= 10)
-    ax1.plot(t,f, 'black', linewidth = .75)
+    time_cad /= time_cad
+    ax1.scatter(time_cad,flux_cad, s= 10)
+    ax1.plot(time_cad,flux_cad, 'black', linewidth = .75)
     plt.title("Lightcurve " + str(chosenfile), fontsize = 16) #or filename
-    plt.xlabel("Time (Hours)")
+    plt.xlabel("Time (Days)")
     plt.ylabel("Numerical Flux")
-    plt.xlim([np.amin(t),np.amax(t)])
-    delta = np.amax(f) - np.amin(f)
+    plt.xlim([np.amin(time_cad),np.amax(time_cad)])
+    delta = np.amax(flux_cad) - np.amin(flux_cad)
     plt.ylim([1 - 1.5*delta, 1. + .5*delta])
     
     ax2 = fig.add_subplot(223)
-    ax2.plot(freq*freq_fact*conv_hr_day, power,'black')
+    ax2.plot(freq*constant, power,'black')
+    ax2.scatter(freq[peak_indexes]*constant,power[peak_indexes], s =30)
     plt.title("Numfreq = " + str(len(peak_indexes)), fontsize =16)
     plt.xlabel("Frequency (cycles/day)")
     plt.ylabel("Amplitude")
     plt.xlim([0,24])
+    plt.ylim(bottom=0)
     
     ax3 = fig.add_subplot(224)
-    ax3.plot(freq*freq_fact*conv_hr_day, power_rel,'black')
-    ax3.scatter(freq[relevant_index]*freq_fact*conv_hr_day, power_rel[relevant_index], c='black', s=40)
+    ax3.plot(freq*constant, power_rel,'black')
+    ax3.scatter(freq[relevant_index]*constant, power_rel[relevant_index], c='black', s=50)
     plt.title("PEAK FREQ = " + str(relevant_freq) + " Period: " + str(relevant_period), fontsize =16)
     plt.xlabel("Frequency (cycles/day)")
     upper  = np.round(relevant_freq)
@@ -376,7 +421,7 @@ for filename in filename_arr:
         upper += 1
     plt.xlim([0, upper])
     
-    #plt.show()
+    plt.show()
     
     info = ["LCfluxesepic" + str(filename) + "star00", relevant_freq, relevant_period]
     information_arr.append(info)
