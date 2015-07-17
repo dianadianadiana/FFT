@@ -164,14 +164,22 @@ def limit_applier(arr, lower_limit = 1.0, upper_limit = 10.0):
 ############################# read all the data ################################
 ################################################################################
 
-#%cd "C:/Users/dianadianadiana/Desktop/Research/Data/Data"
+#filename_arr = ['201124933', '201127583', '201140274', '201143076', '201149315', '201159747',
+#                '201167435', '201174877', '201345483', '201637175', '201862715', '202060551',
+#                '202068113', '203099398', '205029914', '205071984']
 
-filename_arr = ['201124933', '201127583', '201140274', '201143076', '201149315', '201159747',
-                '201167435', '201174877', '201345483', '201637175', '201862715', '202060551',
-                '202068113', '203099398', '205029914', '205071984']
-information_arr =[] # ea elem has this format [ filename, peak freq, period, notes - optional]
-for filename in filename_arr:
-    chosenfile = "C:/Users/dianadianadiana/Desktop/Research/Data/Data/LCfluxesepic" + str(filename) + "star00"
+information_arr =[""] # each elem has this format [ filename, peak freq, period, notes (optional)]
+
+path = "C:/Users/dianadianadiana/Desktop/Decorrelatedphotometry2/Decorrelatedphotometry2/"
+beginning = "LCfluxesepic"
+ending = "star00"
+
+# array of all the epic numbers
+filename_arr = []
+
+for epicname in filename_arr:
+    #chosenfile = "C:/Users/dianadianadiana/Desktop/Research/Data/Data/LCfluxesepic" + str(filename) + "star00"
+    chosenfile = path + beginning + str(epicname) + ending
     data = np.loadtxt(chosenfile + ".txt")
     data = np.transpose(data)
     t = data[0] # in days
@@ -247,7 +255,7 @@ for filename in filename_arr:
     if exp < N_log:
         exp += 1 #compensate for if N_log was rounded down
     
-    extra_fact = 5
+    extra_fact = 3
     newN = 2**(exp + extra_fact)
     n = newN/N
     n = np.round(n)
@@ -332,7 +340,7 @@ for filename in filename_arr:
 ################################################################################
     
     if len(peak_indexes) == 0 and len(harmonics_indexes) == 0:
-        info = ["LCfluxesepic" + str(filename) + "star00", None, None, 'WARNING: no peaks detected']
+        info = [epicname, None, None, 'WARNING: no peaks detected']
         information_arr.append(info)
         continue
     
@@ -452,14 +460,18 @@ for filename in filename_arr:
     plt.xlim([0, upper])
     plt.ylim(bottom=0)
     
-    plt.show()
+    #plt.show()
     
     if biggest_gap/len(time_cad) >= .2:
-        info = ["LCfluxesepic" + str(filename) + "star00", relevant_freq, relevant_period,'WARNING: huge gap']
+        info = [epicname, relevant_freq, relevant_period,'WARNING: huge gap']
         information_arr.append(info)
         continue
     elif longer_period:
-        info = ["LCfluxesepic" + str(filename) + "star00", relevant_freq, relevant_period,'WARNING: may be longer period']
+        info = [epicname, relevant_freq, relevant_period,'WARNING: may be longer period']
+        information_arr.append(info)
+        continue
+    elif len(peak_indexes) != 0 and harmonics_indexes[0] < peak_indexes[0]:
+        info = [epicname, relevant_freq, relevant_period,'WARNING: there may be a harmonic peak that came before the first main peak']
         information_arr.append(info)
         continue
         
