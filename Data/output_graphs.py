@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.fftpack import fft, fftfreq
 from pylab import *
 from scipy.optimize import curve_fit
-import os, sys
+import os
 
 ################################################################################
 ################################ FUNCTIONS #####################################
@@ -38,10 +38,9 @@ def constraint_index_finder(constraint, x, y, poly = 0, loops = 10):
     # a power value greater constraint * value of best line fit
     val_indexes= np.empty(0) 
     
-    j = 0
-    while j < loops:
+    for count in np.arange(loops):
         z = np.polyfit(x, y, poly)
-        if j > 0 and z[0] == val:
+        if count > 0 and z[0] == val:
             break # to leave the loop early if the same value is brought up
         val = z[0]
         i = 0
@@ -49,13 +48,10 @@ def constraint_index_finder(constraint, x, y, poly = 0, loops = 10):
             if y[i] >= constraint * val:
                 val_indexes = np.append(val_indexes, i)
             i += 1
-        j += 1
-    val_indexes = val_indexes.astype(int)
-    return val_indexes
+    return val_indexes.astype(int)
     
 def poly_maker(x, y, func, poly = 1):
     #z1 = z[0]*t**5 + z[1]*t**4 + z[2]*t**3 + z[3]*t**2 + z[4]*t + z[5]
-
     z = np.polyfit(x, y, poly)
     i = 0
     znew = np.zeros(len(func)) + z[poly]
@@ -101,8 +97,7 @@ def cluster_max(clusters, y):
     max_indexes = np.empty(0)
     for elem in clusters:
         max_indexes = np.append(max_indexes, elem[y[elem].argmax()])
-    max_indexes = max_indexes.astype(int)
-    return max_indexes
+    return max_indexes.astype(int)
 
 def peak_verifier(index_arr, arr1, arr2, n, peak_width):
     """
@@ -123,12 +118,9 @@ def peak_verifier(index_arr, arr1, arr2, n, peak_width):
     while k < len(index_arr) - 1:
         curr_index = index_arr[k]
         next_index = index_arr[k+1]
-
         if np.abs(arr1[curr_index]-arr1[next_index]) <= peak_width:
-
             curr_lower, curr_upper = curr_index - n, curr_index + n
             next_lower, next_upper = next_index - n, next_index + n
-            
             if curr_lower < 0:
                 curr_lower = 0
             if next_lower < 0:
@@ -136,7 +128,6 @@ def peak_verifier(index_arr, arr1, arr2, n, peak_width):
             #curr_maxpow and next_maxpow should be the same
             curr_maxpow = np.amax(arr2[curr_lower:curr_upper])
             next_maxpow = np.amax(arr2[next_lower:next_upper])
-
             if power[curr_index] == curr_maxpow:
                 delete_arr.append(k+1)
             else:
@@ -158,8 +149,7 @@ def limit_applier(arr, lower_limit = 1.0, upper_limit = 10.0):
             delete_arr = np.append(delete_arr, np.arange(i, len(arr)))
             break 
         i += 1
-    delete_arr = delete_arr.astype(int)
-    return delete_arr
+    return delete_arr.astype(int)
 
 ################################################################################
 ############################# read all the data ################################
@@ -171,7 +161,9 @@ def limit_applier(arr, lower_limit = 1.0, upper_limit = 10.0):
 
 information_arr =[] # each elem has this format [ filename, peak freq, period, notes (optional)]
 
-path = "C:/Users/dianadianadiana/Desktop/temp/"
+path2 = "C:/Users/dianadianadiana/Desktop/Research/Field2/Decorrelatedphotometry2/"
+path3 = "C:/Users/dianadianadiana/Desktop/Research/Field3/Decorrelatedphotometry2/Decorrelatedphotometry2" # 16,339 Files
+datapath = "C:/Users/dianadianadiana/Desktop/Research/Data/LC/" # 16 files
 #beginning = "LCfluxesepic"
 #ending = "star00"
 
@@ -181,10 +173,10 @@ path = "C:/Users/dianadianadiana/Desktop/temp/"
 # 205900901: 17 hrs in the temp file!
 # new data set: 205899208 look at this one!!!
 #filename_arr = ["205900901"]
+path = datapath
 filename_arr = os.listdir(path)
-print(filename_arr[3])
 
-for epicname in filename_arr[3:4]:
+for epicname in filename_arr[:]:
     #chosenfile = "C:/Users/dianadianadiana/Desktop/Research/Data/Data/LCfluxesepic" + str(filename) + "star00"
     chosenfile = path + str(epicname)
     data = np.loadtxt(chosenfile)
@@ -205,37 +197,29 @@ for epicname in filename_arr[3:4]:
     gap = delta_t/cadence # has a length = len(t) - 2 (bc it ignores endpoints)
     gap = np.around(gap, decimals = 0)
     
-    gap_cut = 1.1   #Time differences greater than gap_cut*cadence are gaps
-    gap_loc = np.empty(0) # array that holds the indexes of where the gaps are
-    
     if gap[0] == 0:
         gap += 1
-        
-    i = 0
-    while i < len(gap):
-        if gap[i] > gap_cut:
-            gap_loc = np.append(gap_loc, i)
-        i += 1
+    
+    gap_cut = 1.1   #Time differences greater than gap_cut*cadence are gaps    
+    gap_loc = [i for i in np.arange(len(gap)) if (gap[i] > gap_cut)]
     num_gap = len(gap_loc) # the number of gaps present 
     biggest_gap = np.amax(gap)
 
 ################################################################################
 ########## Create a new time and flux array to account for the gaps ############
 ################################################################################
-    num_cad = sum(gap) + 2#+1 # the number of data points
+    num_cad = sum(gap) + 2 # the number of data points
     time_cad = np.arange(num_cad)*cadence + np.amin(t)
     flux_cad = np.arange(num_cad, dtype = np.float) 
         
     oldflux_st = 0 # this is an index
     newflux_st = 0 # this is an index
-    n = 0
-    while n < num_gap :
+    
+    for n in np.arange(num_gap):
         oldflux_ed = gap_loc[n]
         gap_sz     = gap[gap_loc[n]]
         newflux_ed = newflux_st + (oldflux_ed-oldflux_st)
-        if len(flux_cad[newflux_st:newflux_ed]) != len(f[oldflux_st:oldflux_ed]):
-            print(chosenfile)
-            n = num_gap
+
         flux_cad[newflux_st:newflux_ed] = f[oldflux_st:oldflux_ed]
         
         gap_fill = (np.ones(gap_sz-1))*f[oldflux_ed]
@@ -245,7 +229,6 @@ for epicname in filename_arr[3:4]:
         
         oldflux_st = oldflux_ed + 1
         newflux_st = newflux_ed + gap_sz
-        n+=1 
     
     #account for last part where there is no gap after
     flux_cad[newflux_st:num_cad] = f[oldflux_st:num_time] 
@@ -264,8 +247,7 @@ for epicname in filename_arr[3:4]:
     
     extra_fact = 5
     newN = 2**(exp + extra_fact)
-    n = newN/N
-    n = np.round(n)
+    n = np.round(newN/N)
     diff = newN - N
     mean = np.mean(f)
     voidf = np.zeros(diff) + mean
@@ -289,58 +271,102 @@ for epicname in filename_arr[3:4]:
     bin_sz = 1./len(newf) * constant
     peak_width_to_zero = bin_sz * 2**extra_fact
     peak_width = 2 * peak_width_to_zero
-    
-    #peak_error = .11 # should i do this?
-    #peak_width_error = peak_width + peak_width * peak_error
 
 ################################################################################
 ########################### Normalizing the FFT ################################
 ################################################################################
-
+   
+    def isNaN(num):
+        return num != num
     def parameter_finder(arr, arr1):
-        index0, index2 = 0, len(arr) - 1
-        index1 = .5 * index2
-        x0, x1, x2 = arr[index0], arr[index1], arr[index2]
-        y0, y1, y2 = arr1[index0], arr1[index1], arr1[index2]
+        index, width = .25 * len(arr), 30
+        i0, i1, i2 = index, 2*index, 3*index
+        x0, x1, x2 = arr[i0], arr[i1], arr[i2]
+        y0, y1, y2 = np.mean(arr1[i0-width:i0+width]), np.mean(arr1[i1-width:i1+width]), np.mean(arr1[i2-width:i2+width])
         k, s = x0, x1 - x0
         a = (y0*y2 - y1**2)/(y0 + y2 - 2*y1)
         b = (y1 - y0)**2/(y0 + y2 - 2*y1)
         c = (y2 - y1)/(y1 - y0)
         A = a
-        C = c**(1./s)
-        B = b/(C**k)
+        if isNaN(c**(1./s)):
+            B, C = 1, 1
+        else:
+            C = c**(1./s)
+            B = b/(C**k) 
         return np.array([A, B, C])
-        
     def exp_decay(x, A, B, C):
+        # where C = np.exp(-c)
         return A + B*C**x
+        
+    points = len(freq)
+    try:
+        p0 = parameter_finder(freq*constant, power)
+        popt, pcov = curve_fit(exp_decay, freq*constant, power, p0, maxfev = 500)
+    except RuntimeError:
+        #z = poly_maker(freq, power, freq, poly = 2)
+        z = poly_maker(freq[.25*points: .75*points], power[.25*points: .75*points], freq, poly = 2)
+        if np.amin(z)<0:
+            #z = np.zeros(points)
+            z[:]=1
 
-    p0 = parameter_finder(freq*constant, power)
-    popt, pcov = curve_fit(exp_decay, freq*constant, power, p0)
-    z=exp_decay(freq*constant,*popt)
-    #z = poly_maker(freq, power, freq, poly =4)
+    else:
+        z = exp_decay(freq*constant,*popt)
+        if np.amin(z)<0:
+            #z = poly_maker(freq, power, freq, poly = 2)
+            z = poly_maker(freq[.25*points: .75*points], power[.25*points: .75*points], freq, poly = 2)
+            if np.amin(z)<0:
+                #z = np.zeros(points)
+                z[:]=1
+
     pre_power_rel = power/z
    
-    pre_indexes = constraint_index_finder(4, freq, pre_power_rel) #peaks
-    power_fit = np.delete(pre_power_rel, pre_indexes)
+    pre_indexes = constraint_index_finder(4, freq, pre_power_rel) #peaks to temporarily ignore
     freq_fit = np.delete(freq, pre_indexes)    
-    p1 = parameter_finder(freq_fit*constant, power_fit)
-    popt1, pcov1 = curve_fit(exp_decay, freq_fit*constant, power_fit, p1)
-    z1=exp_decay(freq_fit*constant,*popt1)
-    #z1 = poly_maker(freq_fit, power_fit, freq_fit, poly = 2)
+    power_fit = np.delete(pre_power_rel, pre_indexes)
+    points_fit = len(freq_fit)
+    try:
+        p1 = parameter_finder(freq_fit*constant, power_fit)
+        popt1, pcov1 = curve_fit(exp_decay, freq_fit*constant, power_fit, p1, maxfev = 500)
+    except RuntimeError:
+        #z1 = poly_maker(freq_fit, power_fit, freq_fit, poly = 2)
+        z1 = poly_maker(freq_fit[.25*points: .75*points], power_fit[.25*points: .75*points], freq_fit, poly = 2)
+        if np.amin(z1)<0:
+             z1[:] = 1
+
+    else:
+        z1=exp_decay(freq_fit*constant,*popt1)
+        if np.amin(z1) < 0:
+            #z1 = poly_maker(freq_fit, power_fit, freq_fit, poly = 2)
+            z1 = poly_maker(freq_fit[.25*points: .75*points], power_fit[.25*points: .75*points], freq_fit, poly = 2)
+            if np.amin(z1)<0:
+                #z1 = np.zeros(points_fit)
+                z1[:] = 1
+
    
     # Relative power  
-    p2 = parameter_finder(freq_fit*constant, power_fit)  
-    popt2, pcov2 = curve_fit(exp_decay, freq_fit*constant, power_fit, p2)
-    z2=exp_decay(freq*constant,*popt2)
-    #z2 = poly_maker(freq_fit, power_fit, freq)
-    
+    try:
+        p2 = parameter_finder(freq_fit*constant, power_fit)
+        popt2, pcov = curve_fit(exp_decay, freq_fit*constant, power_fit, p2, maxfev = 500)
+    except RuntimeError:
+        z2 = poly_maker(freq_fit, power_fit, freq)
+        if np.amin(z2)<0:
+            #z2 = np.zeros(points)
+            z2[:] = 1
+    else:
+        z2=exp_decay(freq*constant,*popt2)
+        if np.amin(z2)<0:
+            z2 = poly_maker(freq_fit, power_fit, freq)
+            if np.amin(z2)<0:
+                #z2 = np.zeros(points)
+                z2[:] = 1
+
     power_rel = pre_power_rel/z2
    
 ################################################################################
 ################################################################################
 ################################################################################   
    
-    peak_constraint, harmonics_constraint = 4.0,3.0
+    peak_constraint, harmonics_constraint = 4.0, 3.0
     
     val_indexes = constraint_index_finder(peak_constraint, freq, power_rel) #peaks
     val_indexes1 = constraint_index_finder(harmonics_constraint, freq, power_rel) #harmonics
@@ -352,8 +378,9 @@ for epicname in filename_arr[3:4]:
     harmonics_indexes = peak_verifier(harmonics_indexes, freq*constant, power_rel, n, peak_width)  
       
 ############################### peak limits ####################################
-    # keep all of the original peak_indexes to check later on if it's a longer
-    # period planet
+    
+    # keep all of the original peak_indexes/harmonics_indexes to check later on 
+    # if it's a longer period planet
     original_peak_indexes = peak_indexes
     original_harmonics_indexes = harmonics_indexes
     
@@ -362,6 +389,7 @@ for epicname in filename_arr[3:4]:
     peak_indexes = np.delete(peak_indexes, limit_applier(freq[peak_indexes]*constant))
     harmonics_indexes = np.delete(harmonics_indexes, limit_applier(freq[harmonics_indexes]*constant))
     
+    # booleans
     has_peaks = len(peak_indexes) > 0
     longer_period = False
 
@@ -373,7 +401,7 @@ for epicname in filename_arr[3:4]:
     
     for elem in peak_indexes:
         number = len(harmonics_indexes) + 1
-        poss_indexes = np.arange(2, number) * elem - 1
+        poss_indexes = np.arange(2, number) * elem - 1 #possible indexes
         poss_indexes_lower = poss_indexes - n
         poss_indexes_upper = poss_indexes + n
         poss_indexes_bound = np.array([poss_indexes_lower, poss_indexes_upper])
@@ -397,10 +425,10 @@ for epicname in filename_arr[3:4]:
     if has_peaks:
         relevant_index = potential_arr[np.argmax(rel_power_sums)][0]
         
-    ################# checking if it might be longer period planet #################
+################# checking if it might be longer period planet #################
     
         potential_arr_longer_period = []
-        for elem in original_peak_indexes: #maybe should be original harmonics indexes?
+        for elem in original_peak_indexes: 
             number = len(harmonics_indexes) + 1
             poss_indexes = 1. / np.arange(2, number) * relevant_index - 1
             poss_indexes_lower = poss_indexes - n
@@ -423,7 +451,7 @@ for epicname in filename_arr[3:4]:
             poss_indexes_bound = np.array([poss_indexes_lower, poss_indexes_upper])
             poss_indexes_bound = np.transpose(poss_indexes_bound)
             temp_arr = [elem]
-            for elem1 in harmonics_indexes:
+            for elem1 in original_harmonics_indexes:
                 for lower, upper in poss_indexes_bound:
                     if elem1 >= lower and elem1 <= upper:
                         temp_arr.append(elem1)
@@ -491,25 +519,22 @@ for epicname in filename_arr[3:4]:
     
     if biggest_gap/len(time_cad) >= .2:
         info = [epicname, relevant_freq, relevant_period,'WARNING: huge gap']
-        information_arr.append(info)
-        continue
     elif longer_period:
         info = [epicname, relevant_freq, relevant_period,'WARNING: may be longer period']
-        information_arr.append(info)
-        continue
     elif len(peak_indexes) != 0 and harmonics_indexes[0] < peak_indexes[0]:
         info = [epicname, relevant_freq, relevant_period,'WARNING: there may be a harmonic peak that came before the first main peak']
-        information_arr.append(info)
-        continue
     elif not has_peaks:
         info = [epicname, None, None, 'WARNING: no peaks detected']
-        information_arr.append(info)
-        continue
-        
-    info = [epicname, relevant_freq, relevant_period]
+    else:
+        info = [epicname, relevant_freq, relevant_period]
+    
     information_arr.append(info)
     
+    #graphpath3 = "C:/Users/dianadianadiana/Desktop/Research/Field3/Figures"
+    epicname_notxt = epicname[:len(epicname) - 4]
+    figurepath = "C:/Users/dianadianadiana/Desktop/Research/Data/Figures/Figures1/"
     #fig.savefig(chosenfile + "_testgraphs.png", dpi = 300)
+    fig.savefig(figurepath + str(epicname_notxt) + "_figure.png", dpi = 300)
     
     
 for elem in information_arr:
