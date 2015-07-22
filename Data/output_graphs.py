@@ -6,6 +6,7 @@ from scipy.fftpack import fft, fftfreq
 from pylab import *
 from scipy.optimize import curve_fit
 import os
+import csv
 
 ################################################################################
 ################################ FUNCTIONS #####################################
@@ -176,7 +177,7 @@ datapath = "C:/Users/dianadianadiana/Desktop/Research/Data/LC/" # 16 files
 path = datapath
 filename_arr = os.listdir(path)
 
-for epicname in filename_arr[:]:
+for epicname in filename_arr[:6]:
     #chosenfile = "C:/Users/dianadianadiana/Desktop/Research/Data/Data/LCfluxesepic" + str(filename) + "star00"
     chosenfile = path + str(epicname)
     data = np.loadtxt(chosenfile)
@@ -515,7 +516,7 @@ for epicname in filename_arr[:]:
     plt.xlim([0, upper])
     plt.ylim(bottom=0)
     
-    plt.show()
+    #plt.show()
     
     if biggest_gap/len(time_cad) >= .2:
         info = [epicname, relevant_freq, relevant_period,'WARNING: huge gap']
@@ -534,8 +535,22 @@ for epicname in filename_arr[:]:
     epicname_notxt = epicname[:len(epicname) - 4]
     figurepath = "C:/Users/dianadianadiana/Desktop/Research/Data/Figures/Figures1/"
     #fig.savefig(chosenfile + "_testgraphs.png", dpi = 300)
-    fig.savefig(figurepath + str(epicname_notxt) + "_figure.png", dpi = 300)
-    
+    #fig.savefig(figurepath + str(epicname_notxt) + "_figure.png", dpi = 300)
     
 for elem in information_arr:
     print(elem)
+    
+res = information_arr
+csvfile = figurepath + "information.txt"
+
+#Assuming res is a flat list
+with open(csvfile, "w") as output:
+    writer = csv.writer(output, lineterminator='\n')
+    for val in res:
+        writer.writerow([val])    
+
+#Assuming res is a list of lists
+with open(csvfile, "w") as output:
+    writer = csv.writer(output, lineterminator='\n')
+    writer.writerows(res)
+    
