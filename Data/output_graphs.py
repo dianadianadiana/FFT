@@ -246,7 +246,7 @@ for epicname in filename_arr[:]:
 ################################################################################
 
     # oversampling
-    time_cad *= 24. #in hours
+    #time_cad *= 24. #in hours
     N = len(time_cad)
     N_log = np.log2(N) # 2 ** N_log = N
     exp = np.round(N_log)
@@ -274,7 +274,7 @@ for epicname in filename_arr[:]:
     power = np.abs(f_flux)
     
     conv_hr_day = 24. #conversion factor from cycles/hour to cycles/day
-    constant = freq_fact*conv_hr_day
+    constant = freq_fact*conv_hr_day*24
     
     bin_sz = 1./len(newf) * constant
     peak_width_to_zero = bin_sz * 2**extra_fact
@@ -499,7 +499,7 @@ for epicname in filename_arr[:]:
     fig = plt.figure(figsize=(20,15))
     
     ax1 = fig.add_subplot(211)
-    time_cad /= 24
+    #time_cad /= 24
     ax1.scatter(time_cad, flux_cad, s=10, c='black')
     ax1.plot(time_cad, flux_cad, 'black', linewidth = .75)
     plt.title("Lightcurve " + str(epicname), fontsize = 16)
