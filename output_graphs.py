@@ -4,7 +4,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy.fftpack import fft, fftfreq
 from pylab import *
-from scipy.optimize import curve_fit
 import os
 import csv
 from scipy.interpolate import LSQUnivariateSpline
@@ -22,116 +21,22 @@ start_time = time.clock() #start the clock
 ############# that are considered to be peaks and all the values ###############
 ########## in the power array that are considered to be harmonics ##############
     
-def constraint_index_finder(constraint, x, y, poly = 0):
+def constraint_index_finder(constraint, y):
     """ 
-    Takes two arrays (freq and power) and then computes the line of best fit/mean value (using poly)
-    The value is then multiplied with the constraint, and any value in y (power) that is above
-        constraint * mean value is stored to an array --> That array is then returned
-    Return value: 
-        val_indexes -- array with indexes where y[indexes] output values greater than 
-                    constraint * mean value
-    
-    constraint: the number times the best fit/mean of y
-    x: x values -- freq
+    Parameters:
+    constraint: the number times mean of y
     y: y values -- power
-    poly: the power of the best line fit
+    Return value: 
+    val_indexes -- array with indexes where y[indexes] output values greater than constraint * mean value
+    What it does:
+    The mean of the array is multiplied with the constraint, and the index of any value in y (power) 
+    that is above constraint*mean value is stored to an array --> That array is then returned
+    """
+    return np.where(y >= constraint*np.median(y))[0]
     
-    """
-    # raise error if x and y don't have the same length
-    if len(x) != len(y):
-        raise Exception('x and y needs to have the same length.')
-
-    z = np.polyfit(x, y, poly)
-    val = z[0]
-    return np.where(y >= constraint* val)[0]
+def max_peaks(index_arr, arr):
+    return [index_arr[i] for i in range(1, len(index_arr)-1) if arr[index_arr[i-1]]<arr[index_arr[i]] and arr[index_arr[i+1]]<arr[index_arr[i]]]
     
-def poly_maker(x, y, func, poly = 1):
-    #z1 = z[0]*t**5 + z[1]*t**4 + z[2]*t**3 + z[3]*t**2 + z[4]*t + z[5]
-    z = np.polyfit(x, y, poly)
-    i = 0
-    znew = np.zeros(len(func)) + z[poly]
-    while i < poly:
-        znew = znew + z[i]*func**(poly-i)
-        i += 1
-    return znew
-    
-################################################################################
-############################## cluster algorithm ###############################
-# goal: find out where the clusters are, and keep only the max of each cluster #
-################################################################################
-
-def cluster(index_arr, arr, peak_width = .015):
-    """
-        Takes an array of values (indexes) and clusters them (based on the width)
-        Parameters:
-            index_arr -- array of indexes (sub array from a bigger array)
-            arr -- array of values (it is a sub array from a bigger array)
-            peak_width -- how wide is the peak
-        Returns:
-            clusters -- a list of lists. each element of clusters is one cluster
-    """
-    clusters = []
-    i = 0
-    while i < len(index_arr):
-        temp_arr = [index_arr[i]]
-        j = i+1
-        while j < len(index_arr) and (np.abs(arr[temp_arr[0]] - arr[index_arr[j]]) <= peak_width):
-            temp_arr.append(index_arr[j])
-            j+=1
-        clusters.append(temp_arr)
-        i=j
-    return clusters
-    
-def cluster_max(clusters, y):
-    """ 
-        Takes a list of lists (clusters) and finds the index of where each max value of a cluster is
-        Parameters:
-            clusters -- a list of lists
-            y -- the bigger array
-        Returns:
-            max_indexes -- an array of the indexes of where the max of each cluster is
-    """
-    max_indexes = np.empty(0)
-    for elem in clusters:
-        max_indexes = np.append(max_indexes, elem[y[elem].argmax()])
-    return max_indexes.astype(int)
-
-def peak_verifier(index_arr, arr1, arr2, n, peak_width):
-    """
-        The purpose of this function is to recognize if two points are on the same peak, 
-            and if there are two poitns on the same peak, then the point that is the true
-            max of the peak will be chosen, whereas the other one will be discarded.
-        Parameters:
-            index_arr: this is the peak_indexes or harmonics_indexes
-            arr1: freq*constant
-            arr2: power
-            n: 2*n = the minumum number of data points for a peak
-            peak_width: the width of the peak
-        Returns:
-            the index_arr with the indexes of the true peak maxes
-    """
-    k = 0
-    delete_arr = []
-    while k < len(index_arr) - 1:
-        curr_index = index_arr[k]
-        next_index = index_arr[k+1]
-        if np.abs(arr1[curr_index]-arr1[next_index]) <= peak_width:
-            curr_lower, curr_upper = curr_index - n, curr_index + n
-            next_lower, next_upper = next_index - n, next_index + n
-            if curr_lower < 0:
-                curr_lower = 0
-            if next_lower < 0:
-                next_lower = 0
-            #curr_maxpow and next_maxpow should be the same
-            curr_maxpow = np.amax(arr2[curr_lower:curr_upper])
-            #next_maxpow = np.amax(arr2[next_lower:next_upper])
-            if arr2[curr_index] == curr_maxpow:
-                delete_arr.append(k+1)
-            else:
-                delete_arr.append(k)  
-        k+=1
-    return np.delete(index_arr, delete_arr)
-
 def limit_applier(arr, lower_limit = 1.0, upper_limit = 10.0):
     """
     Takes an array and a lower and upper limit and returns an array of the indices that 
@@ -149,26 +54,54 @@ def limit_applier(arr, lower_limit = 1.0, upper_limit = 10.0):
 
 information_arr =[] # each elem has this format [ filename, code #, peak freq, period ]
 
+path1 = "C:/Users/dianadianadiana/Desktop/Decorrelatedphotometry2/Decorrelatedphotometry2/"
 path2 = "C:/Users/dianadianadiana/Desktop/Research/Field2/Decorrelatedphotometry2/"
-path3 = "C:/Users/dianadianadiana/Desktop/Research/Field3/Decorrelatedphotometry2/Decorrelatedphotometry2" # 16,339 Files
+path3 = "C:/Users/dianadianadiana/Desktop/Research/Field3/Decorrelatedphotometry2/Decorrelatedphotometry2/" # 16,339 Files
 datapath = "C:/Users/dianadianadiana/Desktop/Research/Data/LC/" # 16 files
 temppath = "C:/Users/dianadianadiana/Desktop/temp/LC/"
-#beginning = "LCfluxesepic"
+beginning = "LCfluxesepic"
 #ending = "star00"
 
-# array of all the epic numbers
-# 205029914: period of 4.98 - short frequencies
-# 204129699: check!!! should have freq around 1.5
-# 205900901: 17 hrs in the temp file!
-# new data set: 205899208 look at this one!!!
-#filename_arr = ["205900901"]
-
-path = temppath
+path = path3
 filename_arr = os.listdir(path)
 
-for epicname in filename_arr[:]:
-    #chosenfile = "C:/Users/dianadianadiana/Desktop/Research/Data/Data/LCfluxesepic" + str(filename) + "star00"
+#all the field 3 interest 
+interest_epic_arr = ["205906302","205914832","205924614","205945953","205962680","205977782", "205982900",
+"205985357","205988562","205992585","206038285","206038483","206049101","206103150","206135267",
+"206143957","206152015","206154641","206159239","206202136","206259533","206260730","206311743",
+"206409426","206412289","206474395","206477939","206489474","206500801","206511754","206532093",
+"205906302","205962262","205968100","205978103"]
+#the potential planets of field 3
+planets_epic_arr = ['205906302','205924614', '205945953', '205962262', '205962680',
+'205985357','205992585','206038285', '206038483', '206049101', '206103150', '206135267',
+'206202136', '206311743', '206500801']
+
+interest_wo_planets_arr = ["205914832","205977782", "205982900","205988562","206143957",
+"206152015","206154641","206159239","206259533","206260730","206409426","206412289",
+"206474395","206477939","206489474","206511754","206532093",
+"205906302","205962262","205968100","205978103"]
+
+EPIC = ['206011496','206038483','206245553','206247743','205924614','206026904','206026904','206036749',
+'206044803','206061524','206096602','206096602','206114294','206155547','206169375','206181769',
+'206298289','206318379','206432863','206500801','205947161','206011691','206159027']
+#chosenfile = "C:/Users/dianadianadiana/Desktop/Research/Field3/information.txt"
+#data = np.genfromtxt(chosenfile, delimiter=',', dtype=None, names=('epic','code','freq','period'))
+#keep = []
+#for elem in data:
+#    if elem[2] != 0:
+#        keep.append(elem)
+        
+count = 0
+#for epicname in keep[0:10]:
+#for epicname in filename_arr[100:500]:
+for epicname in EPIC[:10]:
+    count+=1
+    epicname = beginning + str(epicname) + "star00.txt"
+    #bad data files from field 3
+    if epicname == "LCfluxesepic206134600star00.txt" or epicname == "LCfluxesepic206050032star00.txt":
+        continue
     chosenfile = path + str(epicname)
+    #print(chosenfile)
     data = np.loadtxt(chosenfile)
     data = np.transpose(data)
     t = data[0] # in days
@@ -189,9 +122,10 @@ for epicname in filename_arr[:]:
     gap = delta_t/cadence # has a length = len(t) - 2 (bc it ignores endpoints)
     gap = np.around(gap)
     gap = np.append(gap, 1)
+    gap = gap.astype(int)
     
     gap_cut = 1.1   #Time differences greater than gap_cut*cadence are gaps    
-    gap_loc = [i for i in np.arange(len(gap)) if (gap[i] > gap_cut)]
+    gap_loc = np.where(gap > gap_cut)[0]
     num_gap = len(gap_loc) # the number of gaps present 
     biggest_gap = np.amax(gap)
 
@@ -201,11 +135,11 @@ for epicname in filename_arr[:]:
 
     num_cad = sum(gap)  # the number of data points
     time_cad = np.arange(num_cad)*cadence + np.amin(t)
-    flux_cad = np.arange(num_cad, dtype = np.float) 
+    flux_cad = np.empty(num_cad) 
         
     oldflux_st = 0 # this is an index
     newflux_st = 0 # this is an index
-    
+
     for n in np.arange(num_gap):
         oldflux_ed = gap_loc[n]
         gap_sz     = gap[gap_loc[n]]
@@ -219,7 +153,7 @@ for epicname in filename_arr[:]:
         flux_cad[newflux_ed] = np.mean([flux_cad[newflux_ed-1], flux_cad[newflux_ed+1]])
         
         oldflux_st = oldflux_ed + 1
-        newflux_st = newflux_ed + gap_sz
+        newflux_st = newflux_ed + gap_sz    
     
     #account for last part where there is no gap after
     flux_cad[newflux_st:num_cad] = f[oldflux_st:num_time] 
@@ -231,7 +165,6 @@ for epicname in filename_arr[:]:
 ################################################################################
 
     # oversampling
-    time_cad *= 24. #in hours
     N = len(time_cad)
     N_log = np.log2(N) # 2 ** N_log = N
     exp = np.round(N_log)
@@ -250,54 +183,59 @@ for epicname in filename_arr[:]:
     f_flux = fft(newf) * norm_fact
         
     freq = fftfreq((len(newf)))
-    d_pts = (np.amax(time_cad) - np.amin(time_cad)) / N
+    d_pts = (np.amax(time_cad) - np.amin(time_cad)) / (N-1)
     freq_fact = 1.0 / d_pts #frequency factor 
+    freq *= freq_fact
     
     postivefreq = freq > 0 # take only positive values
     freq, f_flux = freq[postivefreq], f_flux[postivefreq]
     
-    power = np.abs(f_flux)
+    power = np.abs(f_flux)#**2
     
-    conv_hr_day = 24. #conversion factor from cycles/hour to cycles/day
-    constant = freq_fact*conv_hr_day
-    
-    bin_sz = 1./len(newf) * constant
-    peak_width_to_zero = bin_sz * 2**extra_fact
-    peak_width = 2 * peak_width_to_zero
+    bin_sz = 1./len(newf) * freq_fact # distance between consecutive points in cycles per day
+    peak_width = 2 * bin_sz * 2**extra_fact #in cycles per day
 
 ################################################################################
 ########################### Normalizing the FFT ################################
 ################################################################################
-   
-    knot_w = 30*n*bin_sz # difference in freqs between each knot
+
+    knot_w = 60*n*bin_sz # difference in freqs between each knot
     
-    # first fit
-    first_knot_i = np.where((freq*constant - freq[0]*constant) >= knot_w)[0][0] #index of the first knot is the first point that is knot_w away from the first value of x 
-    last_knot_i = np.where((freq[-1]*constant-freq*constant) >= knot_w)[0][-1]#index of the last knot is the first point that is knot_w away from the last value of x
-    knots = np.arange(freq[first_knot_i]*constant, freq[last_knot_i]*constant,knot_w)
-    spline = LSQUnivariateSpline(freq*constant, power, knots, k=2) #the spline, it returns the piecewise function
-    fit = spline(freq*constant) #the actual y values of the fit
+    ## first fit
+    first_knot_i = np.round(knot_w/bin_sz) #index of the first knot is the first point that is knot_w away from the first value of x 
+    last_knot_i = len(freq) - first_knot_i#index of the last knot is the first point that is knot_w away from the last value of x
+    knots = np.arange(freq[first_knot_i], freq[last_knot_i],knot_w)
+    spline = LSQUnivariateSpline(freq, power, knots, k=2) #the spline, it returns the piecewise function
+    fit = spline(freq) #the actual y values of the fit
     if np.amin(fit) < 0:
         fit = np.ones(len(freq))
+        print "fit"
     pre_power_rel = power/fit
     
     # second fit -- by deleting the points higher than 4 times the average value of pre_power_rel
-    pre_indexes = constraint_index_finder(4, freq, pre_power_rel) #peaks
+    #pre_indexes = constraint_index_finder(4**2, pre_power_rel) #peaks
+    pre_indexes = constraint_index_finder(8, power)
+    #power_fit = np.delete(power, pre_indexes)
     power_fit = np.delete(pre_power_rel, pre_indexes)
+    #SHOULD POWER FIT BE W POWER OR PRE POWER REL
     freq_fit = np.delete(freq, pre_indexes)
     
-    #fit1 = np.median(power_fit)
-    #fit2 = poly_maker(freq_fit, power_fit, freq, poly = 2)
-    first_knot_fit_i = np.where((freq_fit*constant - freq_fit[0]*constant) >= knot_w)[0][0] #index of the first knot is the first point that is knot_w away from the first value of x 
-    last_knot_fit_i = np.where((freq_fit[-1]*constant-freq_fit*constant) >= knot_w)[0][-1]#index of the last knot is the first point that is knot_w away from the last value of x
-    knots_fit = np.arange(freq_fit[first_knot_fit_i]*constant, freq_fit[last_knot_fit_i]*constant,knot_w)
-    spline = LSQUnivariateSpline(freq_fit*constant,power_fit,knots_fit, k=2) #the spline, it returns the piecewise function
-    fit3 = spline(freq*constant) #the actual y values of the fit
+    knot_w1 = 120 * n *bin_sz
+    first_knot_fit_i = np.round(knot_w1/bin_sz) #index of the first knot is the first point that is knot_w away from the first value of x 
+    last_knot_fit_i = len(freq_fit) - first_knot_fit_i#index of the last knot is the first point that is knot_w away from the last value of x
+    knots_fit = np.arange(freq_fit[first_knot_fit_i], freq_fit[last_knot_fit_i], knot_w1)
+    spline = LSQUnivariateSpline(freq_fit,power_fit,knots_fit, k=2) #the spline, it returns the piecewise function
+    fit3 = spline(freq) #the actual y values of the fit applied to freq
     if np.amin(fit3) < 0:
         fit3 = np.ones(len(freq))
+        print "fit3"
     
     # relative power
+    #power_rel = power / fit3 #* 10**5
+    
     power_rel = pre_power_rel / fit3
+    power_rel /= np.median(power_rel)
+
 
 ################################################################################
 ################################################################################
@@ -305,28 +243,25 @@ for epicname in filename_arr[:]:
 ################################################################################   
 ################################################################################
 
-    peak_constraint, harmonics_constraint = 4.6, 3.0
-    
-    val_indexes = constraint_index_finder(peak_constraint, freq, power_rel) #peaks
-    val_indexes1 = constraint_index_finder(harmonics_constraint, freq, power_rel) #harmonics
+    peak_constraint, harmonics_constraint = 3.5, 3
 
-    peak_indexes = cluster_max(cluster(val_indexes, freq*constant, peak_width), power_rel)    
-    harmonics_indexes = cluster_max(cluster(val_indexes1, freq*constant, peak_width), power_rel)  
-    
-    peak_indexes = peak_verifier(peak_indexes, freq*constant, power_rel, n, peak_width)
-    harmonics_indexes = peak_verifier(harmonics_indexes, freq*constant, power_rel, n, peak_width) 
+    val_indexes = constraint_index_finder(peak_constraint, power_rel) #peaks
+    val_indexes1 = constraint_index_finder(harmonics_constraint, power_rel) #harmonics
 
+    peak_indexes = max_peaks(val_indexes, power_rel)
+    harmonics_indexes = max_peaks(val_indexes1, power_rel)
+    
     # keep all of the original peak_indexes/harmonics_indexes to check later on 
     # if it's a longer period planet
-    highest_period = 150.0 # in hours
+    highest_period = 105.0 # in hours
     lowest_freq = 24. / highest_period # in cycles per day
-    original_peak_indexes = np.delete(peak_indexes, limit_applier(freq[peak_indexes]*constant,lowest_freq))
-    original_harmonics_indexes = np.delete(harmonics_indexes, limit_applier(freq[harmonics_indexes]*constant,lowest_freq))
+    original_peak_indexes = np.delete(peak_indexes, limit_applier(freq[peak_indexes],.1))
+    original_harmonics_indexes = np.delete(harmonics_indexes, limit_applier(freq[harmonics_indexes],lowest_freq))
     
     # we only want peaks that are between freqs of [1,10] cycles/day
-    lower_freq, upper_freq = 1.0, 10.0
-    peak_indexes = np.delete(peak_indexes, limit_applier(freq[peak_indexes]*constant))
-    harmonics_indexes = np.delete(harmonics_indexes, limit_applier(freq[harmonics_indexes]*constant))
+    lower_freq, upper_freq = 24. / highest_period, 12.0
+    peak_indexes = np.delete(peak_indexes, limit_applier(freq[peak_indexes],lower_freq,upper_freq))
+    harmonics_indexes = np.delete(harmonics_indexes, limit_applier(freq[harmonics_indexes],lower_freq,upper_freq))
     
 ################################################################################
 ################################################################################
@@ -399,8 +334,8 @@ for epicname in filename_arr[:]:
         for elem in potential_indexes_longer_period:
             number = len(original_harmonics_indexes) + 1
             poss_indexes = np.arange(2, number) * elem - 1
-            poss_indexes_lower = poss_indexes - n # lower bound of possible indexes
-            poss_indexes_upper = poss_indexes + n # upper bound of possible indexes
+            poss_indexes_lower = poss_indexes - 2*n # lower bound of possible indexes
+            poss_indexes_upper = poss_indexes + 2*n # upper bound of possible indexes
             poss_indexes_bound = np.array([poss_indexes_lower, poss_indexes_upper])
             poss_indexes_bound = np.transpose(poss_indexes_bound)
             temp_arr = [elem]
@@ -425,8 +360,9 @@ for epicname in filename_arr[:]:
                 longer_period = True
                 relevant_index = potential_arr1[np.argmax(rel_power_sums1)][0]
         
-        relevant_freq = freq[relevant_index]*constant
-        relevant_period = 24./relevant_freq
+        relevant_freq = freq[relevant_index]
+        #relevant_period = 24./relevant_freq
+        relevant_period = relevant_freq**(-1)
 
 ################################################################################
 ################################################################################
@@ -436,45 +372,63 @@ for epicname in filename_arr[:]:
 
     fig = plt.figure(figsize=(20,15))
     
-    ax1 = fig.add_subplot(211)
-    time_cad /= 24
-    ax1.scatter(time_cad, flux_cad, s=10, c='black')
+    ax1 = fig.add_subplot(221)
+    ax1.scatter(time_cad, flux_cad, s=5, c='black')
     ax1.plot(time_cad, flux_cad, 'black', linewidth = .75)
-    plt.title("Lightcurve " + str(epicname), fontsize = 16)
-    plt.xlabel("Time (Days)")
-    plt.ylabel("Numerical Flux")
-    plt.xlim([np.amin(time_cad),np.amax(time_cad)])
+    ax1.set_title("Lightcurve " + str(epicname), fontsize = 16)
+    ax1.set_xlabel("Time (Days)")
+    ax1.set_ylabel("Numerical Flux")
+    ax1.set_xticks(np.arange(np.round(np.amin(time_cad),-1), np.round(np.amax(time_cad),-1)+1, 5.0))
+    ax1.set_xlim([np.amin(time_cad), np.amax(time_cad)])
     delta = np.amax(flux_cad) - np.amin(flux_cad)
-    plt.ylim([1 - 1.5 * delta, 1. + .5 * delta])
+    ax1.set_ylim([1 - 1.5 * delta, 1. + .5 * delta])
+    ax1.grid(True)
     
+    lower = 0
+    upper = 12
     ax2 = fig.add_subplot(223)
-    ax2.plot(freq*constant, power, 'black')
+    ax2.plot(freq, power, 'black',linewidth = .75)
     if has_peaks:
-        ax2.scatter(freq[peak_indexes]*constant, power[peak_indexes], s=30, c="black")
-        plt.title("Numfreq = " + str(len(peak_indexes)), fontsize = 16)
+        ax2.scatter(freq[peak_indexes], power[peak_indexes], s=30, c="black")
+        #ax2.scatter(freq[harmonics_indexes], power[harmonics_indexes], s=20, c="blue")
+        ax2.set_title("Numfreq = " + str(len(peak_indexes)), fontsize = 16)
     else:
-        plt.title("NO PEAKS DETECTED")
-    plt.xlabel("Frequency (cycles/day)")
-    plt.ylabel("Amplitude")
-    plt.xlim([0,10])
-    plt.ylim(bottom=0)
+        ax2.set_title("NO PEAKS DETECTED")
+    ax2.set_xlabel("Frequency (cycles/day)")
+    ax2.set_ylabel("Amplitude")
+    ax2.set_xlim([lower,upper])
+    ax2.set_ylim(bottom=0)
+    ax2.set_xticks(np.arange(upper))
+    ax2.grid(True)
     
     ax3 = fig.add_subplot(224)
-    ax3.plot(freq*constant, power_rel,'black')
+    ax3.plot(freq, power_rel,'black',linewidth = .75)
     if has_peaks and good_peak:
-        ax3.scatter(freq[relevant_index]*constant, power_rel[relevant_index], c='black', s=50)
-        plt.title("PEAK FREQ = " + str(relevant_freq) + " Period: " + str(relevant_period), fontsize =16)
-        #upper  = np.round(relevant_freq)
-        #if upper < relevant_freq:
-        #    upper += 1
+        ax3.scatter(freq[relevant_index], power_rel[relevant_index], c='black', s=50)
+        ax3.set_title("PEAK FREQ = " + str(relevant_freq) + " Period: " + str(relevant_period) + " days", fontsize =13)
+        #ax3.scatter(freq[original_peak_indexes], power_rel[original_peak_indexes], s=30, c="black")
+
     else:
-        plt.title("NO PEAKS DETECTED")
-        #upper = 5.0
-    plt.xlabel("Frequency (cycles/day)")
-    plt.ylabel("Relative Amplitude")
-    upper = 10
-    plt.xlim([0, upper])
-    plt.ylim([0, 1.5*np.amax(power_rel[n:])])
+        ax3.set_title("NO PEAKS DETECTED")
+    ax3.set_xlabel("Frequency (cycles/day)")
+    ax3.set_ylabel("Relative Amplitude")
+    ax3.set_xlim([lower, upper])
+    ax3.set_ylim([0, 1.5*np.amax(power_rel[n:])])
+    ax3.set_xticks(np.arange(upper))
+    ax3.grid(True)
+
+    ### Folded Light Curve
+    ax4 = fig.add_subplot(222)
+    ax4.set_xlabel("Orbital phase")
+    ax4.set_ylabel("Relative Flux")
+    ax4.grid(True)
+    if has_peaks and good_peak:
+        phases, orbit = np.modf(time_cad/relevant_period)
+        ax4.plot(phases,flux_cad,'k.')
+        ax4.set_title("Folded light curve")
+    else:
+        ax4.set_title("Folded light curve - no peaks detected")
+
     
     plt.show()
     
@@ -492,22 +446,30 @@ for epicname in filename_arr[:]:
         info = [epicname, 0, relevant_freq, relevant_period]
 
     information_arr.append(info)
+    print(info)
     
-    #graphpath3 = "C:/Users/dianadianadiana/Desktop/Research/Field3/Figures"
-    epicname_no_txt = epicname[:len(epicname) - 4]
-    figurepath = "C:/Users/dianadianadiana/Desktop/Research/Data/Figures/Figures_Spline/"
+    epicname_no_txt = epicname[:len(epicname)-4]
+    figurepath = "C:/Users/dianadianadiana/Desktop/Research/Field3/Figures8.5.15/"
+    #figurepath = "C:/Users/dianadianadiana/Desktop/Research/Data/Figures/Figures_Spline/"
     #figurepath = "C:/Users/dianadianadiana/Desktop/temp/Figures/"
     #figurepath = "C:/Users/dianadianadiana/Desktop/Research/Field2/Figures/"
-    #fig.savefig(figurepath + str(epicname_no_txt) + "_figure.png", dpi = 300)
+    #figurepath = "C:/Users/dianadianadiana/Desktop/trash/"
+
+    #fig.savefig(figurepath + str(epicname_no_txt) + "_figure.png", dpi = 200)
     
-#for elem in information_arr:
-#    print(elem)
+    #plt.close()
     
+    if count%10 == 0:
+        print(count)
+    #print (relevant_period - 1.7292)/1.7292
+
+################################################################################   
 ############################ Saving the Information ############################
+################################################################################
 #http://gis.stackexchange.com/questions/72458/export-list-of-values-into-csv-or-txt-file
 
 #res = information_arr
-#csvfile = figurepath + "information.txt"
+#csvfile = "C:/Users/dianadianadiana/Desktop/Research/Field3/Interest/Interest_but_not_potential_planets/information_period_in_days.txt"
 #
 ##Assuming res is a flat list
 #with open(csvfile, "w") as output:
@@ -519,5 +481,7 @@ for epicname in filename_arr[:]:
 #with open(csvfile, "w") as output:
 #    writer = csv.writer(output, lineterminator='\n')
 #    writer.writerows(res)
-    
-print time.clock() - start_time, "seconds"
+#    
+stop_time = time.clock() - start_time
+print stop_time, "seconds"
+print "time per LC:", stop_time/count, "seconds"
