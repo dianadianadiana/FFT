@@ -4,16 +4,16 @@ import matplotlib.pyplot as plt
 from scipy.fftpack import fft, fftfreq
 #from pylab import *
 import os
-#import csv
+import csv
 from scipy.interpolate import LSQUnivariateSpline
 
 def constraint_index_finder(constraint, y):
     """ 
     Parameters:
-    constraint: the number times mean of y
-    y: y values -- power
+    constraint = the number times mean of y
+    y =  y values -- power
     Return value: 
-    val_indexes -- array with indexes where y[indexes] output values greater than constraint * mean value
+    val_indexes = array with indexes where y[indexes] output values greater than constraint * mean value
     What it does:
     The mean of the array is multiplied with the constraint, and the index of any value in y (power) 
     that is above constraint*mean value is stored to an array --> That array is then returned
@@ -21,16 +21,13 @@ def constraint_index_finder(constraint, y):
     return np.where(y >= constraint*np.median(y))[0]
     
 def max_peaks(index_arr, arr):
+    """ Returns an array of the indexes where the indexes indicate where the peaks are"""
     return [index_arr[i] for i in range(1, len(index_arr)-1) if arr[index_arr[i-1]]<arr[index_arr[i]] and arr[index_arr[i+1]]<arr[index_arr[i]]]
     
 def limit_applier(arr, lower_limit = 1.0, upper_limit = 10.0):
-    """
-    Takes an array and a lower and upper limit and returns an array of the indices that 
-        are below the lower limit or higher than the upper limit -- it is the delete_arr
-    """
-    delete_arr = np.where(arr < lower_limit)[0]
-    delete_arr = np.append(delete_arr, np.where(arr > upper_limit)[0])
-    return delete_arr
+    """ Takes an array and a lower and upper limit and returns an array of the indices that 
+        are below the lower limit or higher than the upper limit -- it is the delete_arr"""
+    return np.append(np.where(arr < lower_limit)[0], np.where(arr > upper_limit)[0])
 
 ################################################################################
 ############################# read in data #####################################
@@ -39,13 +36,16 @@ def limit_applier(arr, lower_limit = 1.0, upper_limit = 10.0):
 def read_files(path):
     return os.listdir(path)
     
-def read_data(path, filename):
-    # ex. filename = "LCfluxesepic201637175star00.txt" 
+def read_data(filename):
+    # ex. filename = path_of_file + "LCfluxesepic201637175star00.txt" 
     # ex. epicname = "201637175"
-    chosenfile= path + str(filename)
-    data = np.loadtxt(chosenfile)
-    data = np.transpose(data)
-    return data # data[0] = time, data[1] = flux
+    return np.transpose(np.loadtxt(filename)) # == data -- data[0] = time, data[1] = flux
+
+def read_csv(filename): #mainly for Ruth's FFT
+    spamreader = csv.reader(open(filename, 'rb'), delimiter=',', quotechar='|')
+    #assuming that there is a title row
+    lines = np.transpose(list(spamreader)[1:]) #lines[0] = freq, lines[1] = power; lines[0][0] = "Frequency"
+    return np.asarray([float(i) for i in lines[0]]), np.asarray([float(i) for i in lines[1]])
     
 ################################################################################
 ################################################################################
@@ -61,15 +61,11 @@ def gap_filler(data):
     delta_t = t[1:num_time]-t[0:num_time-1] # has a length = len(t) - 2 (bc it ignores endpoints)
     cadence = np.median(delta_t) # what the time interval between points with gaps currently is
     #Fill gaps in the time series (according to 2012 thesis method)
-    gap = delta_t/cadence # has a length = len(t) - 2 (bc it ignores endpoints)
-    gap = np.around(gap)
-    gap = np.append(gap, 1)
-    gap = gap.astype(int)
+    gap = np.append(np.around(delta_t/cadence), 1).astype(int)
         
     gap_cut = 1.1   #Time differences greater than gap_cut*cadence are gaps    
     gap_loc = [i for i in np.arange(len(gap)) if (gap[i] > gap_cut)]
-    num_gap = len(gap_loc) # the number of gaps present 
-    biggest_gap = np.amax(gap)
+    num_gap, biggest_gap = len(gap_loc), np.amax(gap) # the number of gaps present 
     
     ################################################################################
     ########## Create a new time and flux array to account for the gaps ############
@@ -79,8 +75,7 @@ def gap_filler(data):
     time_cad = np.arange(num_cad)*cadence + np.amin(t)
     flux_cad = np.empty(num_cad) 
             
-    oldflux_st = 0 # this is an index
-    newflux_st = 0 # this is an index
+    oldflux_st, newflux_st = 0, 0 # this is an index
     
     for n in np.arange(num_gap):
         oldflux_ed = gap_loc[n]
@@ -137,15 +132,17 @@ def fft_part(time_cad, flux_cad, extra_fact):
     
     bin_sz = 1./len(newf) * freq_fact # distance between consecutive points in cycles per day
     peak_width = 2 * bin_sz * 2**extra_fact #in cycles per day
+    return freq, power, n, bin_sz, peak_width
 
 ################################################################################
 ########################### Normalizing the FFT ################################
 ################################################################################
-    
+
+def fft_normalize(freq, power, n, bin_sz, cut_peak, knot1, knot2):
     # first fit
-    knot_w = 60*n*bin_sz # difference in freqs between each knot
+    knot_w = knot1*n*bin_sz # difference in freqs (cycles/day) between each knot
     first_knot_i = np.round(knot_w/bin_sz) #index of the first knot is the first point that is knot_w away from the first value of x 
-    last_knot_i = len(freq) - first_knot_i#index of the last knot is the first point that is knot_w away from the last value of x
+    last_knot_i = len(freq) - first_knot_i #index of the last knot is the first point that is knot_w away from the last value of x
     knots = np.arange(freq[first_knot_i], freq[last_knot_i],knot_w)
     spline = LSQUnivariateSpline(freq, power, knots, k=2) #the spline, it returns the piecewise function
     fit = spline(freq) #the actual y values of the fit
@@ -153,12 +150,12 @@ def fft_part(time_cad, flux_cad, extra_fact):
         fit = np.ones(len(freq))
     pre_power_rel = power/fit
     
-    # second fit -- by deleting the points higher than 8 times the average value of pre_power_rel
-    pre_indexes = constraint_index_finder(8, power)
+    # second fit -- by deleting the points higher than cut_peak times the average value of power
+    pre_indexes = constraint_index_finder(cut_peak, power)
     power_fit = np.delete(pre_power_rel, pre_indexes)
     freq_fit = np.delete(freq, pre_indexes)
     
-    knot_w1 = 120 * n *bin_sz
+    knot_w1 = knot2*n*bin_sz
     first_knot_fit_i = np.round(knot_w1/bin_sz) #index of the first knot is the first point that is knot_w away from the first value of x 
     last_knot_fit_i = len(freq_fit) - first_knot_fit_i#index of the last knot is the first point that is knot_w away from the last value of x
     knots_fit = np.arange(freq_fit[first_knot_fit_i], freq_fit[last_knot_fit_i], knot_w1)
@@ -168,10 +165,8 @@ def fft_part(time_cad, flux_cad, extra_fact):
         fit3 = np.ones(len(freq))
     
     # relative power 
-    power_rel = pre_power_rel / fit3
-    power_rel /= np.median(power_rel)
-    
-    return freq, power_rel, power, n
+    power_rel = pre_power_rel / fit3    
+    return power_rel / np.median(power_rel) # so the median of power_rel is 1
     
 ################################################################################
 ################################################################################
@@ -191,10 +186,13 @@ def peak_finder(x, freq, power_rel):
     
     # keep all of the original peak_indexes/harmonics_indexes to check later on 
     # if it's a longer period planet
-    original_peak_indexes = np.delete(peak_indexes, limit_applier(freq[peak_indexes],lowest_freq,upper_freq))
-    original_harmonics_indexes = np.delete(harmonics_indexes, limit_applier(freq[harmonics_indexes],lowest_freq,upper_freq))
+    if lower_freq != lowest_freq:
+        original_peak_indexes = np.delete(peak_indexes, limit_applier(freq[peak_indexes],lowest_freq,upper_freq))
+        original_harmonics_indexes = np.delete(harmonics_indexes, limit_applier(freq[harmonics_indexes],lowest_freq,upper_freq))
+    else:
+        original_peak_indexes, original_harmonics_indexes = np.empty(0), np.empty(0)
     
-    # we only want peaks that are between freqs of [1,10] cycles/day
+    # we only want peaks that are between freqs of [lower_freq, upper_freq] cycles/day
     peak_indexes = np.delete(peak_indexes, limit_applier(freq[peak_indexes],lower_freq,upper_freq))
     harmonics_indexes = np.delete(harmonics_indexes, limit_applier(freq[harmonics_indexes],lower_freq,upper_freq))
     
@@ -209,16 +207,19 @@ def peak_finder(x, freq, power_rel):
 def find_freq(inds, n, freq, power_rel):
     
     peak_indexes, harmonics_indexes, original_peak_indexes, original_harmonics_indexes = inds
-    
+    # potential arr has the format of a list of lists where the 0th index of each elem 
+    # of potential_arr is the peak index and any other numbers in elem are harmonic indexes for
+    # the peak index
+    # ex. [ [1000, 2001, 3004, 4008], [2001, 4008], [3004], [4008] ] 
     potential_arr = []
-    
     for elem in peak_indexes:
         number = len(harmonics_indexes) + 1
         poss_indexes = np.arange(2, number) * elem - 1 #possible indexes
-        poss_indexes_lower = poss_indexes - n # lower bound of possible indexes
-        poss_indexes_upper = poss_indexes + n # upper bound of possible indexes
-        poss_indexes_bound = np.array([poss_indexes_lower, poss_indexes_upper])
-        poss_indexes_bound = np.transpose(poss_indexes_bound)
+        poss_indexes_lower, poss_indexes_upper = poss_indexes - n, poss_indexes + n # lower/upper bound of possible indexes
+        poss_indexes_bound = np.transpose(np.array([poss_indexes_lower, poss_indexes_upper]))
+        #attempt to do the nested for loop in a line - works, but is much slower
+        #temp_arr = [elem]+[elem1 for elem1 in harmonics_indexes for lower,upper in poss_indexes_bound if elem1>=lower and elem1<=upper elif lower>elem1 break]
+        #print temp_arr
         temp_arr = [elem]
         for elem1 in harmonics_indexes:
             for lower, upper in poss_indexes_bound:
@@ -227,18 +228,15 @@ def find_freq(inds, n, freq, power_rel):
                     break # break because no elem1 will only satisfy this condition
                 elif lower > elem1:
                     break # won't ever satisfy the condition
+
         potential_arr.append(temp_arr)
         
-    rel_power_sums = []
-    for elem in potential_arr:
-        if len(elem) == 1: # if only a peak was detected with no harmonics
-            rel_power_sums.append(0) 
-        else: # else sum up all the relative power
-            rel_power_sums.append(np.sum(power_rel[elem])) 
+    # rel_power_sums is a list where each element is the sum of relative power 
+    # for each elem in potential_arr -- sum is 0 if elem of potential_arr is only the peak index
+    rel_power_sums = [np.sum(power_rel[elem]) if len(elem) != 1 else 0 for elem in potential_arr]
             
     # booleans
-    has_peaks = len(peak_indexes) > 0
-    longer_period = False
+    has_peaks, longer_period = len(peak_indexes) > 0, False
     # good peak means that there is at least one peak with one other harmonic
     good_peak = has_peaks and np.amax(rel_power_sums) > 0
        
@@ -248,18 +246,17 @@ def find_freq(inds, n, freq, power_rel):
 
     if has_peaks and good_peak:
         relevant_index = potential_arr[np.argmax(rel_power_sums)][0]
-        
-        ### this 'for loop' goes through the peaks whose freq are [lowest_freq,1]
+        ### this 'for loop' goes through the peaks whose freq are [lowest_freq,upper_freq]
         ### and checks to see if one of those freqs could potentially be
         ### the relevant freq
         potential_indexes_longer_period = [] # indicies of potential revelant freqs
         for elem in original_peak_indexes: 
             number = len(harmonics_indexes) + 1
             poss_indexes = 1. / np.arange(2, number) * relevant_index - 1
-            poss_indexes_lower = poss_indexes - n # lower bound of possible indexes
-            poss_indexes_upper = poss_indexes + n # upper bound of possible indexes
-            poss_indexes_bound = np.array([poss_indexes_lower, poss_indexes_upper])
-            poss_indexes_bound = np.transpose(poss_indexes_bound)
+            poss_indexes_lower, poss_indexes_upper = poss_indexes - n, poss_indexes + n # lower/upper bound of possible indexes
+            poss_indexes_bound = np.transpose(np.array([poss_indexes_lower, poss_indexes_upper]))
+            #attempt to do the nested for loop in a line - works, but is much slower
+            #potential_indexes_longer_period = [elem for elem in original_peak_indexes for lower,upper in poss_indexes_bound if elem>=lower and elem<=upper]
             for lower, upper in poss_indexes_bound:
                 if elem >= lower and elem <= upper:
                     potential_indexes_longer_period.append(elem)
@@ -267,18 +264,19 @@ def find_freq(inds, n, freq, power_rel):
                 elif upper > elem1:
                     break # won't ever satisfy the condition
                     
-        ### this for loop goes through the freqs in the interval [lowest_freq,1] 
+        ### this for loop goes through the freqs in the interval [lowest_freq,upper_freq] 
         ### that may potentially be the relevant freq
         ### follows exact algorithm as the for loop that goes through each peak
         ### in peak_indexes and tries to see if they are potentially good freq
+
         potential_arr1 =[]
         for elem in potential_indexes_longer_period:
             number = len(original_harmonics_indexes) + 1
             poss_indexes = np.arange(2, number) * elem - 1
-            poss_indexes_lower = poss_indexes - 2*n # lower bound of possible indexes
-            poss_indexes_upper = poss_indexes + 2*n # upper bound of possible indexes
-            poss_indexes_bound = np.array([poss_indexes_lower, poss_indexes_upper])
-            poss_indexes_bound = np.transpose(poss_indexes_bound)
+            poss_indexes_lower, poss_indexes_upper = poss_indexes - n, poss_indexes + n # lower/upper bound of possible indexes
+            poss_indexes_bound = np.transpose(np.array([poss_indexes_lower, poss_indexes_upper]))
+            #attempt to do the nested for loop in a line - works, but is much slower
+            #temp_arr = [elem]+[elem1 for elem1 in harmonics_indexes for lower,upper in poss_indexes_bound if elem1>=lower and elem1<=upper]
             temp_arr = [elem]
             for elem1 in harmonics_indexes: # or original_harmonics_indexes?
                 for lower, upper in poss_indexes_bound:
@@ -290,25 +288,17 @@ def find_freq(inds, n, freq, power_rel):
             potential_arr1.append(temp_arr)
             
         if len(potential_arr1)>0:
-            rel_power_sums1 = []
-            for elem in potential_arr1:
-                if len(elem) == 1:
-                    rel_power_sums1.append(0)
-                else:
-                    rel_power_sums1.append(np.sum(power_rel[elem]))
-            
+            rel_power_sums1 = [np.sum(power_rel[elem]) if len(elem) != 1 else 0 for elem in potential_arr1]
             if np.amax(rel_power_sums1) > np.amax(rel_power_sums):
-                longer_period = True
-                relevant_index = potential_arr1[np.argmax(rel_power_sums1)][0]
+                longer_period, relevant_index = True, potential_arr1[np.argmax(rel_power_sums1)][0]
         
         relevant_freq = freq[relevant_index]
-        #relevant_period = 24./relevant_freq
-        relevant_period = relevant_freq**(-1)
-    
+        #relevant_period = 24./relevant_freq # period is in hours
+        relevant_period = relevant_freq**(-1) # period is in days
     else:
         relevant_index, relevant_freq, relevant_period= 0,0,0
-    
-    return relevant_index, relevant_freq, relevant_period, [has_peaks, good_peak, longer_period]
+
+    return relevant_index, relevant_freq, relevant_period, [has_peaks, good_peak, longer_period], potential_arr, rel_power_sums
 
 ################################################################################
 ################################################################################
@@ -377,7 +367,7 @@ def get_figure(time_cad, flux_cad, bools, inds, x, freq, power_rel, power, n, re
         ax4.set_title("Folded light curve")
     else:
         ax4.set_title("Folded light curve - no peaks detected")
-    
+    plt.close(fig)
     return fig
 
 ################################################################################
@@ -389,15 +379,15 @@ def get_info(bools, inds, epicname, relevant_freq, relevant_period):
     peak_indexes, harmonics_indexes, original_peak_indexes, original_harmonics_indexes = inds
 
     if not has_peaks:
-        info = [epicname, 1, 0, 0]#, 'WARNING: no peaks detected']
+        info = [epicname, 1, 0, 0]#, 'WARNING: no peaks detected'
     elif has_peaks and not good_peak:
-        info = [epicname, 2, 0, 0]#, 'WARNING: a peak with no harmonics']
+        info = [epicname, 2, 0, 0]#, 'WARNING: a peak with no harmonics'
     elif has_peaks and good_peak and harmonics_indexes[0] < peak_indexes[0]:
-        info = [epicname, 3, relevant_freq, relevant_period]#,'WARNING: there may be a harmonic peak that came before the first main peak']
+        info = [epicname, 3, relevant_freq, relevant_period]#,'WARNING: there may be a harmonic peak that came before the first main peak'
     elif longer_period:
-        info = [epicname, 4, relevant_freq, relevant_period]#,'WARNING: may be longer period']
+        info = [epicname, 4, relevant_freq, relevant_period]#,'WARNING: may be longer period'
     elif huge_gap:
-        info = [epicname, 5, relevant_freq, relevant_period]#,'WARNING: huge gap']
+        info = [epicname, 5, relevant_freq, relevant_period]#,'WARNING: huge gap'
     else:
-        info = [epicname, 0, relevant_freq, relevant_period]
+        info = [epicname, 0, relevant_freq, relevant_period]# this one is normal
     return info
